@@ -124,6 +124,7 @@ class Buffer:
                 self.runtime.sync_ib(raddrs, rkeys, remote_qpns, remote_lids)
 
     def update_ep_member(self, rank_ids: List[int]):
+        from mooncake import ep, pg
         if not self._use_fallback:
             print("Before sync", self.rank)
             (raddr, rkey) = self.runtime.get_mr_info()
