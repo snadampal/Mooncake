@@ -17,6 +17,7 @@ void MooncakeWorker::startWorker() {
         std::atomic<WorkerTaskStatus> task_status[kNumTasks_];
         using clock = std::chrono::high_resolution_clock;
         clock::time_point activeTime[kNumTasks_];
+        size_t rankToTaskId[kNumTasks_][kMaxNumRanks];
         TransferMetadata::NotifyDesc msg{"ping", "ping"};
         while (running_) {
             PAUSE();
@@ -30,6 +31,8 @@ void MooncakeWorker::startWorker() {
                 auto group = (TransferGroupMeta*)task.transferGroupMeta;
                 bool skipTransfer = (task.opType == c10d::OpType::BROADCAST &&
                                      group->rank != task.broadcastRoot) ||
+                                    (task.opType == c10d::OpType::SCATTER &&
+                                     group->rank != task.broadcastRoot) ||
                                     task.opType == c10d::OpType::BARRIER;
                 if (task_status[i].load(std::memory_order_acquire) == IDLE) {
                     if (skipTransfer) {
@@ -42,6 +45,11 @@ void MooncakeWorker::startWorker() {
                         if (!group->activeRanks[j]) {
                             continue;
                         }
+                        if ((task.opType == c10d::OpType::GATHER ||
+                             task.opType == c10d::OpType::REDUCE) &&
+                            j != task.broadcastRoot) {
+                            continue;
+                        }
                         uint64_t source = group->segmentInfos[group->rank]
                                               .send_buffer[task.bufferOffset];
 
@@ -50,10 +58,13 @@ void MooncakeWorker::startWorker() {
                             case c10d::OpType::ALLREDUCE:
                             case c10d::OpType::ALLGATHER:
                             case c10d::OpType::_ALLGATHER_BASE:
+                            case c10d::OpType::REDUCE:
+                            case c10d::OpType::GATHER:
                                 break;
                             case c10d::OpType::ALLTOALL_BASE:
                             case c10d::OpType::ALLTOALL:
                             case c10d::OpType::_REDUCE_SCATTER_BASE:
+                            case c10d::OpType::SCATTER:
                                 source += j * task.tensorSize;
                                 break;
                             default:
@@ -65,6 +76,7 @@ void MooncakeWorker::startWorker() {
 
                         switch (task.opType) {
                             case c10d::OpType::BROADCAST:
+                            case c10d::OpType::SCATTER:
                                 break;
                             case c10d::OpType::ALLREDUCE:
                             case c10d::OpType::ALLGATHER:
@@ -72,11 +84,15 @@ void MooncakeWorker::startWorker() {
                             case c10d::OpType::ALLTOALL_BASE:
                             case c10d::OpType::ALLTOALL:
                             case c10d::OpType::_REDUCE_SCATTER_BASE:
+                            case c10d::OpType::REDUCE:
+                            case c10d::OpType::GATHER:
                                 target_offset += group->rank * task.tensorSize;
                                 break;
+
                             default:
                                 break;
                         }
+                        rankToTaskId[i][j] = entries.size();
                         entries.push_back(TransferRequest{
                             .opcode = TransferRequest::WRITE,
                             .source = (void*)source,
@@ -100,14 +116,12 @@ void MooncakeWorker::startWorker() {
                         auto now = clock::now();
                         auto diff = std::chrono::duration_cast<
                             std::chrono::microseconds>(now - activeTime[i]);
-                        size_t task_id = 0;
                         for (int j = 0; j < group->size; ++j) {
                             if (!group->activeRanks[j]) {
                                 continue;
                             }
-                            group->engine->getTransferStatus(task.batchID,
-                                                             task_id, status);
-                            ++task_id;
+                            group->engine->getTransferStatus(
+                                task.batchID, rankToTaskId[i][j], status);
                             if (group->activeRanks[j] &&
                                 status.s != TransferStatusEnum::COMPLETED) {
                                 if (status.s == TransferStatusEnum::FAILED ||
