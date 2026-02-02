@@ -111,6 +111,7 @@ class Buffer:
                 interface_ids = torch.cat(interface_ids).tolist()
 
                 self.runtime.sync_roce(raddrs, rkeys, remote_qpns, subnet_prefixes, interface_ids)
+                print("Init sync okay", self.rank)
             else:
 
                 local_lids = self.runtime.get_local_lids()
@@ -157,6 +158,7 @@ class Buffer:
                 interface_ids = torch.cat(interface_ids).tolist()
 
                 self.runtime.sync_roce_update(raddrs, rkeys, remote_qpns, subnet_prefixes, interface_ids, rank_ids)
+                print("Update sync okay", self.rank)
             else:
 
                 local_lids = self.runtime.get_local_lids()
