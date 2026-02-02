@@ -77,6 +77,7 @@ class Buffer:
         self._fallback_next_combine_buffer: Optional[torch.Tensor] = None
 
         if not self._use_fallback:
+            print("Before init", self.rank)
             (raddr, rkey) = self.runtime.get_mr_info()
 
             raddr = torch.tensor([raddr], dtype=torch.int64, device='cuda')
@@ -124,6 +125,7 @@ class Buffer:
 
     def update_ep_member(self, rank_ids: List[int]):
         if not self._use_fallback:
+            print("Before sync", self.rank)
             (raddr, rkey) = self.runtime.get_mr_info()
 
             raddr = torch.tensor([raddr], dtype=torch.int64, device='cuda')
