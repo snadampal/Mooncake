@@ -121,47 +121,6 @@ class Buffer:
 
                 self.runtime.sync_ib(raddrs, rkeys, remote_qpns, remote_lids)
 
-        # Exchange CUDA IPC handles for NVLink/P2P.
-        #
-        # Important:
-        # - This is *independent* from IBGDA. Some environments (e.g. SGLang CI) may have NVLink
-        #   (or CUDA P2P+IPC) available while IBGDA is unavailable/disabled. We still want to
-        #   enable the fast-path in that case.
-        # - If this fails (no NVLink / CUDA IPC unavailable / platform restrictions), we swallow the
-        #   error and keep going in fallback mode.
-        try:
-            local_handle_ints = self.runtime.get_ipc_handle()
-            # pybind11 converts std::vector<int32_t> to a list of integers
-            local_handle_tensor = torch.tensor(local_handle_ints, dtype=torch.int32, device='cuda')
-            handles = [torch.empty(len(local_handle_ints), dtype=torch.int32, device='cuda') for _ in range(self.group_size)]
-            dist.all_gather(handles, local_handle_tensor, group)
-            remote_handles = [h.tolist() for h in handles]
-            self.runtime.sync_nvlink_ipc_handles(remote_handles)
-        except Exception as e:
-            import warnings
-            warnings.warn(
-                f"[Rank {self.rank}] Failed to exchange IPC handles: {e}. Falling back.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
-
-        # Final decision: Use fast-path (CUDA kernel + IBGDA/NVLink) only if it's safe.
-        # The runtime checks:
-        # - If IBGDA is available, use fast-path
-        # - If IBGDA is unavailable but P2P+IPC is fully enabled AND IBGDA resources
-        #   are initialized (for fallback in kernel), use fast-path
-        # - Otherwise, fall back to Python implementation
-        use_fast_path = False
-        try:
-            use_fast_path = bool(self.runtime.use_fast_path())
-        except Exception:
-            # Older runtimes may not expose this yet; be conservative.
-            ibgda_disabled = bool(self.runtime.ibgda_disabled())
-            use_fast_path = not ibgda_disabled
-
-        # Use fast-path only if runtime says it's safe
-        self._use_fallback = not use_fast_path
-
     def update_ep_member(self, rank_ids: List[int]):
         if not self._use_fallback:
             (raddr, rkey) = self.runtime.get_mr_info()
@@ -207,17 +166,6 @@ class Buffer:
                 remote_lids = torch.cat(remote_lids).tolist()
 
                 self.runtime.sync_ib_update(raddrs, rkeys, remote_qpns, remote_lids, rank_ids)
-
-        # Exchange CUDA IPC handles for NVLink P2P
-        local_handle_ints = self.runtime.get_ipc_handle()
-        # pybind11 converts std::vector<int32_t> to a list of integers
-        # Convert list to tensor
-        local_handle_tensor = torch.tensor(local_handle_ints, dtype=torch.int32, device='cuda')
-        handles = [torch.empty(len(local_handle_ints), dtype=torch.int32, device='cuda') for _ in range(self.group_size)]
-        dist.all_gather(handles, local_handle_tensor, self.group)
-        remote_handles = [h.tolist() for h in handles]
-        self.runtime.sync_nvlink_ipc_handles(remote_handles)
-        self._use_fallback = bool(self.runtime.ibgda_disabled())
 
     @staticmethod
     def get_ep_buffer_size_hint(num_max_dispatch_tokens_per_rank: int, hidden: int, num_ranks: int, num_experts: int) -> int:
