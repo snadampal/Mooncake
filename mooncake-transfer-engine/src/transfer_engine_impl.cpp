@@ -186,6 +186,9 @@ int TransferEngineImpl::init(const std::string& metadata_conn_string,
     multi_transports_ =
         std::make_shared<MultiTransport>(metadata_, mutable_server_name);
 #else
+#ifdef USE_EFA
+    local_server_name_ = local_server_name_ + ":" + std::to_string(desc.rpc_port);
+#endif
     multi_transports_ =
         std::make_shared<MultiTransport>(metadata_, local_server_name_);
 #endif
@@ -286,16 +289,31 @@ int TransferEngineImpl::init(const std::string& metadata_conn_string,
                 return -1;
 #endif
             } else {
+#ifdef USE_EFA
+                rdma_transport = multi_transports_->installTransport(
+                    "efa", local_topology_);
+#else
                 rdma_transport = multi_transports_->installTransport(
                     "rdma", local_topology_);
+#endif
             }
             if (rdma_transport == nullptr) {
+#ifdef USE_EFA
+                LOG(ERROR) << "Failed to install RDMA transport, type="
+                           << (use_barex_ ? "barex" : "efa");
+#else
                 LOG(ERROR) << "Failed to install RDMA transport, type="
                            << (use_barex_ ? "barex" : "rdma");
+#endif
                 return -1;
             } else {
+#ifdef USE_EFA
+                LOG(INFO) << "installTransport, type="
+                          << (use_barex_ ? "barex" : "efa");
+#else
                 LOG(INFO) << "installTransport, type="
                           << (use_barex_ ? "barex" : "rdma");
+#endif
             }
         } else {
             Transport* tcp_transport =

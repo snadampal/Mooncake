@@ -56,3 +56,8 @@ if (USE_UBSHMEM)
   add_subdirectory(ascend_transport)
   target_sources(transport PUBLIC $<TARGET_OBJECTS:ascend_transport>)
 endif()
+
+if (USE_EFA)
+  add_subdirectory(efa_transport)
+  target_sources(transport PUBLIC $<TARGET_OBJECTS:efa_transport>)
+endif()

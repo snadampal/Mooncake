@@ -82,6 +82,7 @@ option(USE_TENT "option for building Mooncake TENT" OFF)
 
 option(USE_LRU_MASTER "option for using LRU in master service" OFF)
 option(USE_INTRA_NVLINK "option for using IntraNode nvlink transport" OFF)
+option(USE_EFA "option for using AWS EFA transport with libfabric" OFF)
 set(LRU_MAX_CAPACITY 1000)
 
 if (USE_LRU_MASTER)
@@ -240,6 +241,11 @@ endif()
 
 if (USE_HTTP)
   add_compile_definitions(USE_HTTP)
+
+if (USE_EFA)
+  add_compile_definitions(USE_EFA)
+  message(STATUS "AWS EFA transport support is enabled")
+endif()
   message(STATUS "Http as metadata server support is enabled")
 endif()
 
